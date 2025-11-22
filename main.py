@@ -36,127 +36,453 @@ HTML_PAGE = """
 <head>
   <meta charset="utf-8">
   <title>Upseller PRO – Test Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <style>
-    body {{
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 0 10px;
-    }}
-    h1 {{
-      font-size: 26px;
-      margin-bottom: 5px;
-    }}
-    textarea {{
+    :root {
+      --bg: #020617;
+      --bg-soft: #020617;
+      --card: #020617;
+      --card-soft: #0b1120;
+      --border: #1f2937;
+      --accent: #fbbf24;  /* Gold */
+      --accent-soft: rgba(250, 191, 36, 0.15);
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+      --danger: #f97373;
+      --shadow-soft: 0 24px 60px rgba(0, 0, 0, 0.75);
+      --radius-lg: 18px;
+      --radius-md: 10px;
+      --radius-sm: 7px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px 10px 40px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", Arial, sans-serif;
+      background: radial-gradient(circle at top, #111827 0, #020617 50%, #000000 100%);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .app-shell {
+      width: 100%;
+      max-width: 980px;
+      background: linear-gradient(135deg, rgba(15,23,42,0.98), rgba(3,7,18,0.98));
+      border-radius: 26px;
+      border: 1px solid rgba(148,163,184,0.25);
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .glow-ring {
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      pointer-events: none;
+      background: conic-gradient(from 160deg, rgba(250,204,21,0.18), transparent 35%, transparent 65%, rgba(251,191,36,0.3));
+      opacity: 0.22;
+      mix-blend-mode: screen;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      padding: 18px 22px 26px;
+    }
+
+    /* Top Bar / Logo */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-pill {
+      width: 56px;
+      height: 56px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 25% 10%, #fef9c3, #f59e0b 55%, #78350f 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border: 1px solid rgba(248,250,252,0.35);
+      box-shadow: 0 18px 45px rgba(15,23,42,0.95);
+    }
+
+    .logo-pill img {
+      max-width: 80%;
+      max-height: 80%;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 10px rgba(15,23,42,0.7));
+    }
+
+    .title-block h1 {
+      font-size: 21px;
+      letter-spacing: 0.03em;
+      margin: 0 0 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .title-block h1 span.badge {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid rgba(251,191,36,0.6);
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    .title-block p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .tagline-chip {
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.4);
+      background: rgba(15,23,42,0.85);
+      color: var(--text-muted);
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .tagline-chip strong {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Form Card */
+    .card {
+      margin-top: 14px;
+      background: radial-gradient(circle at top left, rgba(55,65,81,0.35), rgba(15,23,42,0.96));
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(31,41,55,0.9);
+      padding: 16px 16px 18px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .step-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--accent);
+    }
+
+    .card-header-title {
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .helper-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin: 4px 0 0;
+    }
+
+    textarea {
       width: 100%;
       min-height: 140px;
-      padding: 10px;
-      font-size: 15px;
-      box-sizing: border-box;
-    }}
-    input[type="file"] {{
-      margin-top: 4px;
-    }}
-    button {{
-      padding: 10px 20px;
-      font-size: 15px;
-      cursor: pointer;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      background: #f2f2f2;
-    }}
-    .primary-btn {{
-      background: #111827;
-      color: #ffffff;
-      border-color: #111827;
-    }}
-    .box {{
-      margin-top: 25px;
-      padding: 15px;
-      background: #f7f7f7;
-      border-radius: 8px;
-      border: 1px solid #e0e0e0;
-      white-space: pre-wrap;
-    }}
-    .hint {{
-      font-size: 12px;
-      color: #555;
+      padding: 10px 11px;
       margin-top: 8px;
-    }}
-    .section-title {{
-      margin-top: 20px;
-      margin-bottom: 5px;
-      font-weight: bold;
-    }}
-    .copy-btn {{
-      float: right;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      background: rgba(15,23,42,0.9);
+      color: var(--text-main);
+      font-size: 14px;
+      resize: vertical;
+      outline: none;
+      box-shadow: inset 0 0 0 1px rgba(15,23,42,0.7);
+    }
+
+    textarea::placeholder {
+      color: #6b7280;
+    }
+
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(251,191,36,0.5), 0 0 0 999px rgba(15,23,42,0.35) inset;
+    }
+
+    .input-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      align-items: center;
+      margin-top: 10px;
+      justify-content: space-between;
+    }
+
+    .file-label {
       font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    input[type="file"] {
+      font-size: 11px;
+      max-width: 210px;
+      color: var(--text-muted);
+    }
+
+    button {
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 14px;
+      padding: 9px 18px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.12s ease-in-out;
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .btn-primary {
+      background: radial-gradient(circle at top, #facc15, #eab308 55%, #b45309 100%);
+      color: #111827;
+      border-color: rgba(250,204,21,0.9);
+      box-shadow: 0 10px 30px rgba(250,204,21,0.35);
+      font-weight: 600;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 36px rgba(250,204,21,0.45);
+      filter: brightness(1.02);
+    }
+
+    .btn-copy {
+      font-size: 11px;
       padding: 5px 8px;
-      margin-left: 8px;
-    }}
-    pre {{
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,0.5);
+      background: rgba(15,23,42,0.95);
+      color: var(--text-muted);
+    }
+
+    .btn-copy:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      transform: translateY(-0.5px);
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin: 8px 2px 0;
+    }
+
+    .hint strong {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* Ergebnisbereich */
+    .result-card {
+      margin-top: 18px;
+      background: radial-gradient(circle at 10% -10%, rgba(250,204,21,0.08), rgba(15,23,42,0.98));
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(55,65,81,0.9);
+      padding: 14px 14px 16px;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .result-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .provider-list {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .section-title {
+      margin-top: 10px;
+      margin-bottom: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .section-title span {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    pre {
       white-space: pre-wrap;
       word-wrap: break-word;
-      font-family: inherit;
-      margin: 0;
-    }}
-    .provider-list {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 12px;
-      color: #555;
-      margin-top: 6px;
-    }}
-    .error {{
-      color: #b91c1c;
-      font-weight: bold;
-    }}
+      margin: 0;
+      padding: 10px 11px;
+      border-radius: var(--radius-md);
+      background: rgba(15,23,42,0.95);
+      border: 1px solid rgba(31,41,55,0.9);
+      max-height: 420px;
+      overflow: auto;
+    }
+
+    .error {
+      color: var(--danger);
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 12px 6px 24px;
+      }
+      .content {
+        padding: 14px 12px 18px;
+      }
+      .top-bar {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .tagline-chip {
+        margin-top: 6px;
+      }
+    }
   </style>
+
   <script>
-    function copyText(id) {{
+    function copyText(id) {
       const el = document.getElementById(id);
       if (!el) return;
       const text = el.innerText || el.textContent || "";
-      navigator.clipboard.writeText(text).then(function() {{
+      navigator.clipboard.writeText(text).then(function () {
         alert("In Zwischenablage kopiert.");
-      }}, function(err) {{
+      }, function (err) {
         alert("Kopieren nicht möglich: " + err);
-      }});
-    }}
+      });
+    }
   </script>
 </head>
 <body>
-  <h1>Upseller PRO – Test Dashboard</h1>
-  <p>Beantworte die Fragen Level für Level. Upseller ULTRA merkt sich deine Antworten (solange die Seite offen ist).</p>
+  <div class="app-shell">
+    <div class="glow-ring"></div>
+    <div class="content">
 
-  <form method="post" enctype="multipart/form-data">
-    <input type="hidden" name="state_b64" value="{state_b64}">
-    <label for="text"><b>{question_html}</b></label><br>
-    <textarea id="text" name="text" placeholder="Deine Antwort hier..."></textarea>
+      <!-- TOP / LOGO -->
+      <header class="top-bar">
+        <div class="brand-wrap">
+          <div class="logo-pill">
+            <!-- HIER DEIN LOGO-LINK EINTRAGEN: src="https://dein-bild-link.png" -->
+            <img src="LOGO_URL_HERE" alt="Upseller PRO Logo">
+          </div>
+          <div class="title-block">
+            <h1>
+              Upseller PRO
+              <span class="badge">V5.0 ULTRA</span>
+            </h1>
+            <p>Dein KI-Verkaufsprofi für maximal starke Anzeigen & Preise.</p>
+          </div>
+        </div>
 
-    <div style="margin-top:10px;">
-      <label for="image">Bild (optional):</label>
-      <input id="image" name="image" type="file" accept="image/*">
+        <div class="tagline-chip">
+          <span>🔒 Prompt sicher auf dem Server ·</span>
+          <strong>Multi-KI ready</strong>
+        </div>
+      </header>
+
+      <!-- EINGABE-BEREICH -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="step-label">Level 1</div>
+            <div class="card-header-title">Welches Produkt möchtest du verkaufen?</div>
+            <p class="helper-text">Du kannst hier auch schon Maße, Zustand, Baujahr, Besonderheiten usw. mit reinschreiben.</p>
+          </div>
+        </div>
+
+        <form method="post" enctype="multipart/form-data">
+          <textarea id="text" name="text" placeholder='Z. B. "Massivholzfenster 149 × 149 cm, 3-fach Verglasung, Baujahr 2021, sehr guter Zustand, Restposten aus Ausstellung."'></textarea>
+
+          <div class="input-row">
+            <label class="file-label">
+              📎 Bild (optional):
+              <input id="image" name="image" type="file" accept="image/*">
+            </label>
+
+            <button type="submit" class="btn-primary">
+              ⚡ Mit KI optimieren
+            </button>
+          </div>
+
+          <p class="hint">
+            Die KI arbeitet mit deinem internen <strong>UPSELLER V5.0 ULTRA Masterprompt</strong>
+            (Level-System, Marktanalyse, Verhandlungslogik, KI-Vergleichs-Prompt).<br>
+            Der Prompt liegt sicher auf dem Server und ist nicht im Code sichtbar.
+          </p>
+        </form>
+      </div>
+
+      <!-- ERGEBNIS-BEREICH -->
+      <div class="result-card">
+        <div class="result-header">
+          <div class="result-title">Auswertung</div>
+          <div class="provider-list">Erstellt mit: openai / Upseller-Engine</div>
+        </div>
+
+        {result}
+      </div>
+
     </div>
-
-    <div style="margin-top:15px;">
-      <button type="submit" class="primary-btn">Mit KI optimieren</button>
-    </div>
-
-    <p class="hint">
-      Die KI arbeitet mit deinem internen UPSELLER V5.0 ULTRA Masterprompt
-      (Level-System, Marktanalyse, Verhandlungslogik).
-      Der Prompt liegt sicher auf dem Server und ist nicht im Code sichtbar.
-      Andere KIs (Grok, Claude, Gemini) werden automatisch genutzt, falls API-Keys
-      hinterlegt sind.
-    </p>
-  </form>
-
-  <div class="box">
-    {result}
   </div>
 </body>
 </html>
 """
-
 
 # --------------------------------------------------------------------
 # State-Handling für Level-Chat (im versteckten Feld)
