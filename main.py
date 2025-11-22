@@ -9,20 +9,22 @@ HTML_PAGE = """
 <head>
     <title>Upseller PRO</title>
     <style>
-        body {{ font-family: Arial; max-width: 650px; margin: 40px auto; }}
-        textarea {{ width:100%; padding: 10px; font-size: 15px; }}
-        button {{ padding: 10px 20px; font-size: 16px; }}
-        .box {{ margin-top: 20px; padding: 15px; background: #f2f2f2; border-radius: 8px; }}
+        body { font-family: Arial; max-width: 650px; margin: 40px auto; }
+        textarea { width:100%; padding: 10px; font-size: 15px; }
+        button { padding: 10px 20px; font-size: 16px; }
+        .box { margin-top: 20px; padding: 15px; background: #f2f2f2; border-radius: 8px; }
     </style>
 </head>
 <body>
     <h1>Upseller PRO – Test Dashboard</h1>
     <p>Gib einen Text ein. Später kommt hier die KI-Logik rein.</p>
     <form method="post">
-        <textarea name="text" rows="6"></textarea><br/><br/>
+        <textarea name="text" rows="6"></textarea><br><br/>
         <button type="submit">Absenden</button>
     </form>
+
     {result}
+
 </body>
 </html>
 """
@@ -33,6 +35,5 @@ async def form_get():
 
 @app.post("/", response_class=HTMLResponse)
 async def form_post(text: str = Form(...)):
-    # Hier später die echte Upseller-KI
-    antwort = f"Upseller PRO hat deinen Text empfangen: {text[:200]}..."
-    return HTML_PAGE.format(result=f"<div class='box'><b>Antwort:</b><br>{antwort}</div>")
+    antwort = f"<div class='box'><b>Upseller PRO hat deinen Text empfangen:</b><br>{text[:200]}...</div>"
+    return HTML_PAGE.format(result=antwort)
