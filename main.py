@@ -1,9 +1,15 @@
+import os
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse
 from openai import OpenAI
 
+# OpenAI-Client, nutzt automatisch die Umgebungsvariable OPENAI_API_KEY
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Geheimer Upseller-Prompt – wird sicher aus Railway-Variable geladen
+UPSELLER_PROMPT = os.getenv("UPSELLER_PROMPT", "").strip()
+
 app = FastAPI()
-client = OpenAI()  # benutzt automatisch OPENAI_API_KEY aus den Umgebungsvariablen
 
 HTML_PAGE = """
 <html>
@@ -14,20 +20,21 @@ HTML_PAGE = """
         textarea {{ width:100%; padding: 10px; font-size: 15px; }}
         button {{ padding: 10px 20px; font-size: 16px; cursor: pointer; }}
         .box {{ margin-top: 20px; padding: 15px; background: #f2f2f2; border-radius: 8px; }}
+        .error {{ margin-top: 20px; padding: 15px; background: #ffdddd; border-radius: 8px; color: #900; }}
         .hint {{ margin-top: 10px; font-size: 13px; color: #777; }}
     </style>
 </head>
 <body>
     <h1>Upseller PRO – Test Dashboard</h1>
-    <p>Gib einen Text ein (z.B. deine eBay-Anzeige, Produktbeschreibung, Nachricht an Kunden).</p>
+    <p>Füge unten deine Anzeige / Beschreibung ein (z. B. eBay, Kleinanzeigen, Vinted, Dienstleistung etc.).</p>
     <form method="post">
         <textarea name="text" rows="8"></textarea><br/><br/>
         <button type="submit">Mit KI optimieren</button>
     </form>
 
     <div class="hint">
-        Die KI arbeitet wie dein geheimer Verkaufsprofi: Sie macht Texte knackiger, klarer und verkaufsstärker –
-        ohne deinen Stil komplett zu zerstören.
+        Die KI arbeitet mit deinem internen UPSELLER V2.0 Masterprompt (Level-System, Marktanalyse, Verhandlungslogik).
+        Der Prompt liegt sicher auf dem Server und ist nicht im Code sichtbar.
     </div>
 
     {result}
@@ -43,43 +50,47 @@ async def form_get():
 
 @app.post("/", response_class=HTMLResponse)
 async def form_post(text: str = Form(...)):
-    """
-    Nimmt den eingegebenen Text, schickt ihn an OpenAI
-    und zeigt die optimierte Upseller-Version an.
-    """
+    # Falls dein Prompt nicht gesetzt ist, klare Fehlermeldung
+    if not UPSELLER_PROMPT:
+        error_html = (
+            "<div class='error'><b>Fehler:</b> Der UPSELLER_PROMPT ist nicht gesetzt. "
+            "Bitte in Railway unter <code>UPSELLER_PROMPT</code> deinen Masterprompt hinterlegen.</div>"
+        )
+        return HTML_PAGE.format(result=error_html)
+
     try:
         completion = client.chat.completions.create(
-            model="gpt-4.1-mini",   # günstig & schnell; später leicht änderbar
+            model="gpt-4.1-mini",  # günstig & schnell; kannst du später anpassen
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Du bist UPSELLER PRO, ein Profi für Verkaufspsychologie und Konversion. "
-                        "Deine Aufgabe: Optimiere Texte für Kleinanzeigen, eBay, Vinted, Immobilien, "
-                        "Dienstleistungen usw. "
-                        "Ziele: mehr Vertrauen, höherer Preis, klarer Nutzen für den Kunden. "
-                        "Sprache: deutsch, locker-professionell. "
-                        "Maximiere den wahrgenommenen Wert, aber bleib ehrlich – keine Lügen."
-                    ),
+                    "content": UPSELLER_PROMPT,
                 },
                 {
                     "role": "user",
                     "content": (
-                        "Hier ist der Originaltext, den du optimieren sollst. "
-                        "Gib mir NUR den optimierten Text zurück, keine Erklärungen.\n\n"
+                        "Der Nutzer hat folgenden Originaltext gesendet, den du nach deinem Level-System "
+                        "und deinen Regeln von UPSELLER V2.0 optimieren sollst. "
+                        "Arbeite ganz normal wie im Masterprompt definiert. "
+                        "Gib NUR den optimierten Text zurück, in einem Block, ohne Erklärungen.\n\n"
                         f"{text}"
                     ),
                 },
             ],
-            max_tokens=450,
+            max_tokens=800,
             temperature=0.7,
         )
 
         answer = completion.choices[0].message.content.strip()
     except Exception as e:
-        # Falls API-Fehler, zeige Fehlermeldung im Browser
-        answer = f"Fehler bei der KI-Anfrage: {e}"
+        # API-/Key-/Quota-Fehler freundlich anzeigen
+        error_html = (
+            "<div class='error'><b>KI-Fehler:</b><br>"
+            f"{str(e)}</div>"
+        )
+        return HTML_PAGE.format(result=error_html)
 
+    # Zeilenumbrüche in HTML umwandeln
     safe_answer = answer.replace("\n", "<br>")
     html_answer = f"<div class='box'><b>Upseller-PRO Antwort:</b><br>{safe_answer}</div>"
     return HTML_PAGE.format(result=html_answer)
