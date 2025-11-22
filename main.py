@@ -1,18 +1,20 @@
 import os
 import textwrap
-import base64
-import asyncio
-from typing import Dict, Callable
+from typing import Dict, Callable, Tuple, Optional
 
 import requests
 from fastapi import FastAPI, Form, UploadFile, File
 from fastapi.responses import HTMLResponse
 
-# ------------------------------------------------------------
-# ENV-VARIABLEN
-# ------------------------------------------------------------
+app = FastAPI()
 
-UPSELLER_PROMPT = os.getenv("UPSELLER_PROMPT", "Upseller Prompt fehlt – bitte ENV setzen.")
+# --------------------------------------------------------------------
+# ENV-VARIABLEN
+# --------------------------------------------------------------------
+UPSELLER_PROMPT = os.getenv(
+    "UPSELLER_PROMPT",
+    "Upseller Prompt fehlt – bitte in den Environment Variables setzen."
+)
 
 OPENAI_API_KEY = (
     os.getenv("OPENAI_API_KEY")
@@ -20,29 +22,20 @@ OPENAI_API_KEY = (
     or os.getenv("OPENAI_KEY")
 )
 
-# Standard-Modell – kannst du in Railway anpassen
+# Du kannst das Modell in Railway über eine Variable OPENAI_MODEL anpassen
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
-# Optionale weitere KIs (werden nur genutzt, wenn Keys gesetzt sind)
-GROK_API_KEY = os.getenv("GROK_API_KEY")          # z. B. xAI / Grok
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")  # z. B. Claude
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")      # z. B. Google Gemini
+# optionale weitere KIs – wenn kein Key gesetzt ist, werden sie einfach übersprungen
+GROK_API_KEY = os.getenv("GROK_API_KEY")         # z.B. Grok / xAI
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")  # z.B. Claude
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")     # z.B. Google Gemini
 
-# Logo (hier kannst du später deine eigene URL hinterlegen)
-LOGO_URL = os.getenv(
-    "UPSELLER_LOGO_URL",
-    "https://i.imgur.com/xxxxxxxx.png"  # Platzhalter – bei Bedarf ersetzen
-)
 
-# ------------------------------------------------------------
-# FASTAPI APP
-# ------------------------------------------------------------
-
-app = FastAPI()
-
-# ------------------------------------------------------------
-# HTML-Template (Dark-Look + Copy-Buttons)
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
+# HTML-Template (Dark Mode + Logo + Copy-Buttons)
+# --------------------------------------------------------------------
+# Trage hier dein echtes Logo ein (direkter Bild-Link, z. B. von Imgur)
+LOGO_URL = "https://i.imgur.com/placeholder.png"
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -50,210 +43,184 @@ HTML_PAGE = """
 <head>
   <meta charset="utf-8">
   <title>Upseller PRO – Test Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root {{
       color-scheme: dark;
-    }}
-    * {{
-      box-sizing: border-box;
     }}
     body {{
       margin: 0;
       padding: 0;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top, #1f2937 0, #020617 55%);
+      background: radial-gradient(circle at top, #1f2937 0, #020617 55%, #000 100%);
       color: #e5e7eb;
     }}
-    .page {{
-      min-height: 100vh;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 32px 12px;
-    }}
-    .card {{
-      width: 100%;
+    .shell {{
       max-width: 960px;
-      background: rgba(15, 23, 42, 0.92);
-      border-radius: 18px;
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.65);
-      padding: 22px 22px 26px;
+      margin: 32px auto;
+      padding: 0 16px 32px;
     }}
     .header {{
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 16px;
-    }}
-    .header-left {{
-      display: flex;
-      align-items: center;
       gap: 12px;
+      margin-bottom: 24px;
     }}
     .logo {{
       width: 40px;
       height: 40px;
-      border-radius: 50%;
-      border: 1px solid rgba(252, 211, 77, 0.7);
-      background: radial-gradient(circle at 30% 30%, #facc15 0, #92400e 65%);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #fbbf24, #f97316);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 700;
-      color: #111827;
-      font-size: 18px;
-      box-shadow: 0 0 18px rgba(250, 204, 21, 0.45);
+      overflow: hidden;
+    }}
+    .logo img {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }}
     .title-main {{
       font-size: 22px;
-      font-weight: 650;
+      font-weight: 700;
     }}
     .title-sub {{
-      font-size: 12px;
+      font-size: 13px;
       color: #9ca3af;
     }}
-    .badge {{
-      font-size: 11px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid rgba(252, 211, 77, 0.5);
-      background: linear-gradient(to right, rgba(253, 224, 71, 0.12), rgba(249, 115, 22, 0.18));
-      color: #facc15;
-      white-space: nowrap;
-    }}
-    form {{
-      margin-top: 10px;
-      margin-bottom: 12px;
+    .card {{
+      background: rgba(15, 23, 42, 0.92);
+      border-radius: 18px;
+      padding: 20px 20px 16px;
+      box-shadow:
+        0 18px 45px rgba(15, 23, 42, 0.9),
+        0 0 0 1px rgba(148, 163, 184, 0.1);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      backdrop-filter: blur(18px);
     }}
     label {{
       font-size: 13px;
-      font-weight: 500;
-      display: block;
-      margin-bottom: 4px;
+      color: #9ca3af;
     }}
     textarea {{
       width: 100%;
-      min-height: 120px;
-      padding: 10px 12px;
+      min-height: 180px;
+      margin-top: 6px;
+      padding: 10px 11px;
       font-size: 14px;
-      color: #e5e7eb;
-      background: rgba(15, 23, 42, 0.9);
       border-radius: 10px;
       border: 1px solid rgba(55, 65, 81, 0.9);
+      background: rgba(15, 23, 42, 0.9);
+      color: #e5e7eb;
       resize: vertical;
-      outline: none;
+      box-sizing: border-box;
     }}
     textarea::placeholder {{
       color: #6b7280;
     }}
-    textarea:focus {{
-      border-color: #fbbf24;
-      box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45);
-    }}
     input[type="file"] {{
-      font-size: 12px;
-      margin-top: 3px;
-    }}
-    .row {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-top: 10px;
-    }}
-    .hint {{
-      font-size: 11px;
-      color: #9ca3af;
       margin-top: 6px;
+      font-size: 13px;
+    }}
+    .actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-top: 14px;
     }}
     button {{
-      padding: 9px 16px;
       border-radius: 999px;
-      border: 1px solid rgba(55, 65, 81, 1);
-      background: #111827;
-      color: #e5e7eb;
-      font-size: 14px;
+      border: 1px solid transparent;
+      padding: 9px 16px;
+      font-size: 13px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      background: #111827;
+      color: #e5e7eb;
+      transition: background 0.15s ease, transform 0.07s ease, box-shadow 0.15s ease;
+      box-shadow: 0 12px 25px rgba(15, 23, 42, 0.75);
     }}
-    button.primary-btn {{
-      border-color: rgba(251, 191, 36, 0.8);
-      background: radial-gradient(circle at 30% 0, #facc15 0, #b45309 45%, #111827 95%);
-      color: #020617;
-      font-weight: 600;
+    button.primary {{
+      background: linear-gradient(135deg, #f97316, #facc15);
+      color: #0b1120;
+      box-shadow: 0 16px 35px rgba(250, 204, 21, 0.55);
     }}
-    button.primary-btn:hover {{
-      filter: brightness(1.08);
+    button:hover {{
+      transform: translateY(-1px);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.8);
+      filter: brightness(1.03);
     }}
-    .box {{
-      margin-top: 18px;
-      padding: 14px 14px 16px;
-      background: rgba(15, 23, 42, 0.95);
-      border-radius: 12px;
-      border: 1px solid rgba(75, 85, 99, 0.8);
-      white-space: pre-wrap;
-      font-size: 13px;
+    .hint {{
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 10px;
+      line-height: 1.5;
     }}
-    .section-title {{
-      font-weight: 600;
-      font-size: 13px;
+    .results {{
+      margin-top: 22px;
+      display: grid;
+      gap: 16px;
+    }}
+    .result-card {{
+      border-radius: 14px;
+      padding: 14px 14px 11px;
+      background: radial-gradient(circle at top left, rgba(250, 204, 21, 0.08) 0, rgba(15, 23, 42, 0.98) 40%);
+      border: 1px solid rgba(55, 65, 81, 0.9);
+    }}
+    .result-header {{
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      margin: 10px 0 4px;
+      align-items: center;
+      margin-bottom: 6px;
+    }}
+    .result-title {{
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #e5e7eb;
     }}
     .copy-btn {{
       font-size: 11px;
       padding: 4px 9px;
       border-radius: 999px;
-      border: 1px solid rgba(55, 65, 81, 1);
-      background: rgba(15, 23, 42, 0.9);
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.5);
       color: #e5e7eb;
+      box-shadow: none;
     }}
     .copy-btn:hover {{
-      border-color: #fbbf24;
-      color: #fbbf24;
+      background: #020617;
     }}
     pre {{
+      margin: 0;
       white-space: pre-wrap;
       word-wrap: break-word;
-      margin: 0;
-      font-family: inherit;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 13px;
+      line-height: 1.5;
       color: #e5e7eb;
     }}
-    .provider-list {{
+    .providers {{
       font-size: 11px;
       color: #9ca3af;
-      margin-bottom: 4px;
+      margin-top: 3px;
     }}
     .error {{
       color: #fecaca;
+      font-size: 13px;
       font-weight: 500;
     }}
     @media (max-width: 640px) {{
+      .shell {{
+        margin-top: 20px;
+      }}
       .card {{
-        padding: 18px 14px 20px;
-        border-radius: 14px;
-      }}
-      .title-main {{
-        font-size: 18px;
-      }}
-      .header {{
-        flex-direction: column;
-        align-items: flex-start;
-      }}
-      .row {{
-        flex-direction: column;
-        align-items: flex-start;
-      }}
-      button {{
-        width: 100%;
-        justify-content: center;
+        padding: 16px 14px 14px;
       }}
     }}
   </style>
@@ -263,50 +230,45 @@ HTML_PAGE = """
       if (!el) return;
       const text = el.innerText || el.textContent || "";
       navigator.clipboard.writeText(text).then(
-        function() {{ alert("In Zwischenablage kopiert."); }},
-        function(err) {{ alert("Kopieren nicht möglich: " + err); }}
+        function() {{ alert("Inhalt in die Zwischenablage kopiert."); }},
+        function(err) {{ alert("Konnte nicht kopieren: " + err); }}
       );
     }}
   </script>
 </head>
 <body>
-  <div class="page">
-    <div class="card">
-      <div class="header">
-        <div class="header-left">
-          <div class="logo">U</div>
-          <div>
-            <div class="title-main">Upseller PRO</div>
-            <div class="title-sub">V5.0 ULTRA – Verkaufs- &amp; KI-Analyse</div>
-          </div>
-        </div>
-        <div class="badge">interner Masterprompt – serverseitig geschützt</div>
+  <div class="shell">
+    <div class="header">
+      <div class="logo">
+        <img src="{logo_url}" alt="Upseller Logo">
       </div>
+      <div>
+        <div class="title-main">Upseller PRO</div>
+        <div class="title-sub">V5.0 ULTRA · Verkaufs- & KI-Analyse-Dashboard</div>
+      </div>
+    </div>
 
+    <div class="card">
       <form method="post" enctype="multipart/form-data">
         <label for="text">LEVEL 1 – Welches Produkt möchtest du verkaufen?</label>
-        <textarea id="text" name="text"
-          placeholder='Z. B. "Massivholzfenster 149 x 149 cm, 3-fach Verglasung, Baujahr 2021"'></textarea>
+        <textarea id="text" name="text" placeholder='Z. B. "PS5 Disc Edition, 2 Controller, 3 Spiele, wie neu"'></textarea>
 
-        <div class="row">
-          <div>
-            <label for="image">Bild (optional, für Zustandsanalyse):</label>
-            <input id="image" name="image" type="file" accept="image/*">
-          </div>
-          <div>
-            <button type="submit" class="primary-btn">
-              ⚡ Mit KI optimieren
-            </button>
-          </div>
+        <div style="margin-top:10px;">
+          <label for="image">Bild (optional):</label><br>
+          <input id="image" name="image" type="file" accept="image/*">
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="primary">Mit KI optimieren</button>
         </div>
 
         <p class="hint">
-          Upseller arbeitet mit deinem internen Level-System (1–10), Marktanalyse, Verhandlungslogik
-          &amp; KI-Vergleichsprompt. Der Masterprompt liegt nur als Server-Variable vor und ist nicht im Code sichtbar.
+          Die KI arbeitet mit deinem internen UPSELLER V5.0 ULTRA Masterprompt (Level-System, Marktanalyse, Verhandlungslogik).
+          Der Prompt liegt sicher als Environment Variable auf dem Server und ist nicht im Code sichtbar.
         </p>
       </form>
 
-      <div class="box">
+      <div class="results">
         {result}
       </div>
     </div>
@@ -316,14 +278,14 @@ HTML_PAGE = """
 """
 
 
-# ------------------------------------------------------------
-# Hilfsfunktionen: OpenAI + optionale andere KIs
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
+# KI-Provider-Wrapper
+# --------------------------------------------------------------------
 
 def call_openai(system_prompt: str, user_text: str) -> str:
-    """Standardaufruf an OpenAI (wird auch für die Meta-Auswertung genutzt)."""
+    """Standard-Aufruf an OpenAI (wird auch für die Meta-Auswertung genutzt)."""
     if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY ist nicht gesetzt.")
+        raise RuntimeError("OPENAI_API_KEY nicht gesetzt.")
 
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
@@ -342,89 +304,111 @@ def call_openai(system_prompt: str, user_text: str) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
-def call_openai_vision(system_prompt: str, user_text: str, image_b64: str) -> str:
-    """Sehr einfache Vision-Analyse mit demselben Modell (funktioniert mit gpt-4.x / gpt-4o)."""
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY ist nicht gesetzt.")
-
-    url = "https://api.openai.com/v1/chat/completions"
+def call_grok(system_prompt: str, user_text: str) -> str:
+    """Beispiel für Grok / xAI – wird nur aufgerufen, wenn GROK_API_KEY gesetzt ist."""
+    if not GROK_API_KEY:
+        raise RuntimeError("GROK_API_KEY nicht gesetzt.")
+    url = "https://api.x.ai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json",
+      "Authorization": f"Bearer {GROK_API_KEY}",
+      "Content-Type": "application/json",
     }
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user_text},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{image_b64}"
-                    },
-                },
-            ],
-        },
-    ]
-    data = {"model": OPENAI_MODEL, "messages": messages}
+    data = {
+        "model": "grok-beta",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ],
+    }
     resp = requests.post(url, headers=headers, json=data, timeout=60)
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
 
 
-# Placeholder für andere KIs – bei Bedarf echte Endpoints eintragen
-def call_grok(system_prompt: str, user_text: str) -> str:
-    if not GROK_API_KEY:
-        raise RuntimeError("GROK_API_KEY nicht gesetzt.")
-    # TODO: mit echter Grok-API ersetzen
-    raise RuntimeError("Grok-API-Aufruf ist noch nicht implementiert.")
-
-
 def call_claude(system_prompt: str, user_text: str) -> str:
+    """Beispiel für Anthropic Claude – wird nur genutzt, wenn ANTHROPIC_API_KEY gesetzt ist."""
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY nicht gesetzt.")
-    # TODO: mit echter Claude-API ersetzen
-    raise RuntimeError("Claude-API-Aufruf ist noch nicht implementiert.")
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    data = {
+        "model": "claude-3-haiku-20240307",
+        "max_tokens": 1200,
+        "system": system_prompt,
+        "messages": [
+            {"role": "user", "content": user_text},
+        ],
+    }
+    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    resp.raise_for_status()
+    msg = resp.json()["content"][0]["text"]
+    return msg
 
 
 def call_gemini(system_prompt: str, user_text: str) -> str:
+    """Beispiel für Google Gemini – wird nur genutzt, wenn GEMINI_API_KEY gesetzt ist."""
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY nicht gesetzt.")
-    # TODO: mit echter Gemini-API ersetzen
-    raise RuntimeError("Gemini-API-Aufruf ist noch nicht implementiert.")
-
-
-def call_provider_safe(name: str, func: Callable[[str, str], str],
-                       system_prompt: str, user_text: str) -> str:
-    """Wrappt die einzelnen Provider mit robustem Fehler-Handling."""
-    try:
-        return func(system_prompt, user_text)
-    except requests.Timeout:
-        return f"[{name}: Timeout nach 60s]"
-    except requests.HTTPError as e:
-        code = e.response.status_code if e.response is not None else "?"
-        return f"[{name}: HTTP-Fehler {code}]"
-    except Exception as e:
-        return f"[{name}: {type(e).__name__} – {e}]"
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-1.5-flash:generateContent"
+        f"?key={GEMINI_API_KEY}"
+    )
+    full_prompt = system_prompt + "\n\nNutzer:\n" + user_text
+    data = {"contents": [{"parts": [{"text": full_prompt}]}]}
+    resp = requests.post(url, json=data, timeout=60)
+    resp.raise_for_status()
+    return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 
 def get_available_providers() -> Dict[str, Callable[[str, str], str]]:
-    """Ermittelt dynamisch alle verfügbaren Provider anhand der ENV-Variablen."""
-    providers: Dict[str, Callable[[str, str], str]] = {
-        "openai": call_openai
-    }
+    """
+    Baut automatisch eine Liste aller verfügbaren KIs anhand der gesetzten ENV-Variablen.
+    OpenAI ist immer dabei und dient auch als Meta-KI.
+    """
+    providers: Dict[str, Callable[[str, str], str]] = {}
+    providers["openai"] = call_openai
+
     if GROK_API_KEY:
         providers["grok"] = call_grok
     if ANTHROPIC_API_KEY:
         providers["claude"] = call_claude
     if GEMINI_API_KEY:
         providers["gemini"] = call_gemini
+
     return providers
 
 
+def call_provider_safe(
+    name: str,
+    func: Callable[[str, str], str],
+    system_prompt: str,
+    user_text: str,
+) -> str:
+    """
+    Ruft einen Provider sicher auf und gibt im Fehlerfall eine Text-Fehlermeldung zurück,
+    statt die gesamte App crashen zu lassen.
+    """
+    try:
+        return func(system_prompt, user_text)
+    except requests.Timeout:
+        return f"[{name}: Timeout nach 60s]"
+    except requests.HTTPError as e:
+        status = e.response.status_code if e.response is not None else "?"
+        return f"[{name}: HTTP-Fehler {status}]"
+    except Exception as e:  # noqa: BLE001
+        return f"[{name}: {type(e).__name__}: {e}]"
+
+
 def collect_opinions(user_context: str) -> Dict[str, str]:
-    """Sammelt die Roh-Gutachten aller verfügbaren KIs."""
+    """
+    Ruft alle verfügbaren Provider nacheinander auf und sammelt deren Roh-Antworten.
+    (Synchron, aber robust.)
+    """
     providers = get_available_providers()
     opinions: Dict[str, str] = {}
 
@@ -434,32 +418,38 @@ def collect_opinions(user_context: str) -> Dict[str, str]:
     return opinions
 
 
-# ------------------------------------------------------------
-# Meta-Analyse / Parsing
-# ------------------------------------------------------------
-
-def safe_parse_meta(meta_answer: str) -> tuple[str, str]:
+def safe_parse_meta(meta_answer: str) -> Tuple[str, str]:
     """
-    Versucht, die Blöcke mit Markern zu extrahieren.
-    Fällt robust zurück, wenn die Marker fehlen.
+    Robustes Parsing der Antwort der Meta-KI in:
+      - Level 9 Block
+      - KI-Vergleichs-Prompt Block
+    Erwartet Marker:
+      ---LEVEL9_START--- ... ---LEVEL9_END---
+      ---KICHECK_START--- ... ---KICHECK_END---
+    Fällt bei Fehlern auf eine einfache Ausgabe zurück.
     """
     level9 = ""
     kicheck = ""
 
     try:
-        if "---LEVEL9_START---" in meta_answer and "---LEVEL9_END---" in meta_answer:
+        if ("---LEVEL9_START---" in meta_answer
+                and "---LEVEL9_END---" in meta_answer):
             part = meta_answer.split("---LEVEL9_START---", 1)[1]
             level9, rest = part.split("---LEVEL9_END---", 1)
 
-            if "---KICHECK_START---" in rest and "---KICHECK_END---" in rest:
+            if ("---KICHECK_START---" in rest
+                    and "---KICHECK_END---" in rest):
                 part2 = rest.split("---KICHECK_START---", 1)[1]
                 kicheck = part2.split("---KICHECK_END---", 1)[0]
         else:
-            # Fallback: grobe Zweiteilung
+            # Fallback: Versuche, Antwort grob zu teilen
             parts = meta_answer.split("\n\n---\n\n", 1)
             level9 = parts[0] if parts else meta_answer
-            kicheck = parts[1] if len(parts) > 1 else "KI-Vergleichsprompt konnte nicht extrahiert werden."
-    except Exception as e:
+            if len(parts) > 1:
+                kicheck = parts[1]
+            else:
+                kicheck = "KI-Vergleichs-Prompt konnte nicht extrahiert werden."
+    except Exception as e:  # noqa: BLE001
         level9 = meta_answer
         kicheck = f"Parsing-Fehler: {e}"
 
@@ -468,49 +458,34 @@ def safe_parse_meta(meta_answer: str) -> tuple[str, str]:
 
 def build_meta_analysis(user_context: str, opinions: Dict[str, str]) -> Dict[str, str]:
     """
-    Nutzt OpenAI als Meta-Analyst, um alle Einzel-Gutachten zu
-    einer gemeinsamen Level-9-Auswertung + KI-Vergleichsprompt zu verschmelzen.
+    Nutzt OpenAI (ChatGPT) als Meta-KI, um alle Einzel-Gutachten zu einer
+    gemeinsamen Level-9-Auswertung + KI-Vergleichs-Prompt zu verschmelzen.
     """
-    providers_used = ", ".join(opinions.keys()) or "openai"
+    providers_used = ", ".join(opinions.keys()) if opinions else "openai"
 
     meta_system = """
 <role>UPSELLER ULTRA Meta-Analyst</role>
 
 <task>
-Du erhältst:
-- die Antworten des Nutzers aus Level 1–8
-- mehrere KI-Gutachten (OpenAI + optional andere KIs)
+Du bekommst mehrere KI-Gutachten zu einem Verkaufsobjekt (z. B. openai, grok, claude, gemini)
+und sollst daraus EINE konsistente Auswertung erstellen:
+1. Level 9: Marktanalyse & Preisspanne, Wertfaktoren, Plattformen, Timing,
+   psychologische Preisstrategie, Premium-Anzeigentext, Profi-Zusammenfassung.
+2. Level 10: KI-Vergleichs-Prompt, der als Block von anderen KIs kopiert/verstanden werden kann.
+3. Wenn wichtige Infos fehlen (Maße, Zustand, Baujahr, Region etc.), ergänze diese plausibel,
+   aber kennzeichne sie als 'Schätzung'.
+</task>
 
-Deine Aufgaben:
-1. Erstelle eine saubere Level-9-Auswertung:
-   - Marktanalyse
-   - Preisbereich (Maximal, realistisch, Geduld, Schnellverkauf)
-   - Wertfaktoren
-   - Plattformempfehlung(en)
-   - Timing & Preisprognose
-   - psychologische Preisstrategie
-   - Premium-Anzeigentext (1-Block, 1-Klick Copy tauglich)
-   - kurze Profi-Zusammenfassung
-
-2. Erzeuge einen KI-Vergleichs-Prompt (Level 10),
-   mit dem andere KIs das Angebot gegenchecken können.
-   Verwende die strukturierte Liste:
-   PRODUKT, JAHR, ZUSTAND, ABMESSUNGEN, HERSTELLER, VERGLASUNG,
-   SCHEIBEN, U-WERT/TECHNIK, MATERIAL/PROFIL, FUNKTIONEN,
-   SICHERHEIT, GEWICHT, MÄNGEL, STÜCKZAHL, MARKTREGION,
-   MARKTLAGE, REFERENZBILD, PREISEMPFEHLUNG (Kurzform) usw.
-
-3. Identifiziere fehlende Schlüsseldaten, die man nachfragen sollte.
-
-Formatiere deine Antwort GENAU so:
-
+<output_format>
 ---LEVEL9_START---
-[komplette Level-9-Auswertung]
+[Deine konsolidierte Level-9-Auswertung als zusammenhängender Textblock]
 ---LEVEL9_END---
 ---KICHECK_START---
-[kompletter KI-Vergleichs-Prompt-Block]
+[Vollständiger KI-Vergleichs-Prompt im vom Nutzer gewünschten Format]
 ---KICHECK_END---
-</task>
+</output_format>
+
+Antwort NUR in diesem Format, ohne zusätzliche Erklärungen.
 """
 
     opinions_text = ""
@@ -518,7 +493,7 @@ Formatiere deine Antwort GENAU so:
         opinions_text += f"\n\n### Gutachten {name.upper()}:\n{content}\n"
 
     meta_user = textwrap.dedent(f"""
-    NUTZER-KONTEXT (Level 1–8 Antworten):
+    NUTZER-KONTEXT (Antworten aus Level 1–8, Beschreibung etc.):
 
     {user_context}
 
@@ -528,11 +503,18 @@ Formatiere deine Antwort GENAU so:
 
     {opinions_text}
 
-    Erstelle jetzt die Auswertung im vorgegebenen Format.
+    AUFGABE:
+    1. Ziehe aus den Gutachten eine einzige, saubere Level-9-Auswertung gemäß
+       UPSELLER V5.0 ULTRA (Preisbereich, Wertfaktoren, Plattformen, Timing,
+       psychologische Preisstrategie, Premium-Anzeigentext, Profi-Zusammenfassung).
+    2. Erstelle am Ende zusätzlich den Level-10-KI-Vergleichs-Prompt exakt im Block-Format,
+       damit andere KIs das Angebot prüfen können.
+    3. Nutze strikt die Marker ---LEVEL9_START--- / ---LEVEL9_END--- und
+       ---KICHECK_START--- / ---KICHECK_END---.
     """)
 
-    meta_answer = call_openai(meta_system, meta_user)
-    level9_text, kicheck_text = safe_parse_meta(meta_answer)
+    meta_raw = call_openai(meta_system, meta_user)
+    level9_text, kicheck_text = safe_parse_meta(meta_raw)
 
     return {
         "providers_used": providers_used,
@@ -541,87 +523,81 @@ Formatiere deine Antwort GENAU so:
     }
 
 
-# ------------------------------------------------------------
-# ROUTEN
-# ------------------------------------------------------------
+# --------------------------------------------------------------------
+# FastAPI Routes
+# --------------------------------------------------------------------
+
 
 @app.get("/", response_class=HTMLResponse)
-async def form_get():
-    start_text = (
-        "Gib oben dein Produkt ein und starte Upseller ULTRA.\n"
-        "Du bekommst eine Level-9-Auswertung plus KI-Vergleichs-Prompt."
+async def form_get() -> HTMLResponse:
+    """Erstes Laden des Dashboards."""
+    info = (
+        "Starte mit einer kurzen Beschreibung deines Produkts – "
+        "Upseller ULTRA übernimmt danach die Marktanalyse & Preisfindung."
     )
-    return HTML_PAGE.format(result=start_text)
+    result_html = f"<div class='hint'>{info}</div>"
+    return HTMLResponse(HTML_PAGE.format(result=result_html, logo_url=LOGO_URL))
 
 
 @app.post("/", response_class=HTMLResponse)
 async def form_post(
     text: str = Form(...),
-    image: UploadFile | None = File(None),
-):
+    image: Optional[UploadFile] = File(None),  # aktuell nur Info, keine Vision-Auswertung
+) -> HTMLResponse:
     user_context = text.strip()
 
     if not user_context:
-        result_html = "<span class='error'>Bitte gib zuerst eine Beschreibung deines Produkts ein.</span>"
-        return HTML_PAGE.format(result=result_html)
+        result_html = "<div class='error'>Bitte gib zuerst eine Beschreibung deines Produkts ein.</div>"
+        return HTMLResponse(HTML_PAGE.format(result=result_html, logo_url=LOGO_URL))
 
-    # optional: Bildanalyse
-    if image and image.filename:
-        try:
-            content = await image.read()
-            image_b64 = base64.b64encode(content).decode("utf-8")
-            image_analysis = await asyncio.to_thread(
-                call_openai_vision,
-                "Analysiere dieses Produktbild für einen Verkauf (Zustand, Material, Besonderheiten, Kratzer, Qualität).",
-                user_context,
-                image_b64,
-            )
-            user_context += "\n\nBILD-ANALYSE:\n" + image_analysis
-        except Exception as e:
-            # Bildfehler sollen nicht alles kaputt machen
-            user_context += f"\n\n[Hinweis: Bildanalyse fehlgeschlagen: {e}]"
+    # Falls ein Bild hochgeladen wurde, erweitern wir nur den Kontext-Hinweis.
+    if image is not None and image.filename:
+        user_context += (
+            "\n\nHinweis: Es wurde ein Bild hochgeladen "
+            f"(Dateiname: {image.filename}). "
+            "Upseller darf den Zustand/Beschreibung des Produkts anhand eines Fotos "
+            "zusätzlich präzisieren, auch ohne Vision-API."
+        )
 
     try:
-        # 1. Roh-Gutachten sammeln (OpenAI + optionale KIs)
-        opinions = await asyncio.to_thread(collect_opinions, user_context)
+        # 1. Gutachten aller verfügbaren KIs einsammeln
+        opinions = collect_opinions(user_context)
 
-        # 2. Meta-Auswertung mit OpenAI
-        meta = await asyncio.to_thread(build_meta_analysis, user_context, opinions)
+        # 2. Meta-Auswertung durch openai
+        meta = build_meta_analysis(user_context, opinions)
 
         providers_used = meta["providers_used"]
         level9_block = meta["level9"]
         kicheck_block = meta["kicheck"]
 
-        # 3. HTML-Ergebnis
         result_html = f"""
-        <div>
-          <div class="provider-list">
-            Auswertung erstellt mit: {providers_used}
-          </div>
+        <div class="providers">
+          Auswertung erstellt mit: {providers_used}
+        </div>
 
-          <div class="section-title">
-            Level 9 – Marktanalyse &amp; Preisauswertung
-            <button class="copy-btn" type="button" onclick="copyText('level9_block')">
-              Level&nbsp;9 kopieren
-            </button>
+        <div class="result-card">
+          <div class="result-header">
+            <div class="result-title">Level 9 – Marktanalyse &amp; Preis-Auswertung</div>
+            <button type="button" class="copy-btn" onclick="copyText('level9_block')">Level 9 kopieren</button>
           </div>
           <pre id="level9_block">{level9_block}</pre>
+        </div>
 
-          <div class="section-title">
-            Level 10 – KI-Vergleichs-Prompt (für andere KIs)
-            <button class="copy-btn" type="button" onclick="copyText('kicheck_block')">
-              KI-Prompt kopieren
-            </button>
+        <div class="result-card">
+          <div class="result-header">
+            <div class="result-title">Level 10 – KI-Vergleichs-Prompt</div>
+            <button type="button" class="copy-btn" onclick="copyText('kicheck_block')">KI-Prompt kopieren</button>
           </div>
-          <p class="hint">
-            Diesen Block kannst du in andere KIs (z.&nbsp;B. Grok, Claude, Gemini, ChatGPT) einfügen,
-            damit sie dein Angebot unabhängig prüfen und ergänzen.
-          </p>
           <pre id="kicheck_block">{kicheck_block}</pre>
         </div>
         """
 
-    except Exception as e:
-        result_html = f"<span class='error'>Fehler bei der KI-Anfrage: {e}</span>"
+    except Exception as e:  # noqa: BLE001
+        result_html = (
+            "<div class='result-card'>"
+            "<div class='result-header'><div class='result-title'>Fehler</div></div>"
+            f"<pre class='error'>Fehler bei der KI-Anfrage: {e}</pre>"
+            "</div>"
+        )
 
-    return HTML_PAGE.format(result=result_html)
+    return HTMLResponse(HTML_PAGE.format(result=result_html, logo_url=LOGO_URL))
