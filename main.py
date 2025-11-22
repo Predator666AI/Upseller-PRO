@@ -1,7 +1,7 @@
 import os
 import textwrap
+import base64
 import json
-import html as html_module
 from typing import Dict, Callable
 
 import requests
@@ -14,88 +14,21 @@ app = FastAPI()
 # ENV-VARIABLEN
 # --------------------------------------------------------------------
 UPSELLER_PROMPT = os.getenv("UPSELLER_PROMPT", "Upseller Prompt fehlt – bitte ENV setzen.")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_APIKEY") or os.getenv("OPENAI_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+OPENAI_API_KEY = (
+    os.getenv("OPENAI_API_KEY")
+    or os.getenv("OPENAI_APIKEY")
+    or os.getenv("OPENAI_KEY")
+)
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")  # in Railway anpassbar
 
 # optionale weitere KIs – wenn kein Key gesetzt ist, werden sie einfach übersprungen
-GROK_API_KEY = os.getenv("GROK_API_KEY")         # z.B. Grok / xAI
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")  # z.B. Claude
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")     # z.B. Google Gemini
-
-# --------------------------------------------------------------------
-# LEVEL-DEFINITION (1–8 werden vom Formular abgefragt)
-# --------------------------------------------------------------------
-LEVELS = [
-    {
-        "key": "product",
-        "label": "LEVEL 1 – Welches Produkt möchtest du verkaufen?",
-        "placeholder": 'Z. B. "Massivholzfenster 149 x 149 cm, 3-fach Verglasung, Baujahr 2021"',
-    },
-    {
-        "key": "year",
-        "label": "LEVEL 2 – In welchem Jahr wurde das Produkt hergestellt / gekauft?",
-        "placeholder": "Z. B. 2021, 2018, ca. 10 Jahre alt …",
-    },
-    {
-        "key": "condition",
-        "label": "LEVEL 3 – In welchem Zustand ist das Produkt?",
-        "placeholder": "Z. B. neuwertig, gebraucht, mit leichten Gebrauchsspuren …",
-    },
-    {
-        "key": "extras",
-        "label": "LEVEL 4 – Welche Ausstattung / Extras hat das Produkt?",
-        "placeholder": "Z. B. Sonderverglasung, Markenbeschläge, Zubehör, OVP, Rechnung …",
-    },
-    {
-        "key": "defects",
-        "label": "LEVEL 5 – Gibt es Mängel oder Schäden?",
-        "placeholder": "Z. B. Kratzer, Dellen, Glasfehler, leicht verzogen, keine Mängel …",
-    },
-    {
-        "key": "quantity",
-        "label": "LEVEL 6 – Wie viele Stück möchtest du verkaufen?",
-        "placeholder": "Z. B. 1 Stück, 4 gleiche Fenster, Set aus 6 Teilen …",
-    },
-    {
-        "key": "country",
-        "label": "LEVEL 7 – In welchem Land / welcher Region wird verkauft?",
-        "placeholder": "Z. B. Deutschland, Österreich, Schweiz, Region Brandenburg …",
-    },
-    {
-        "key": "other",
-        "label": "LEVEL 8 – Sonstige wichtige Infos?",
-        "placeholder": "Alles, was wichtig ist: Maße, U-Wert, Marke, Besonderheiten, Lieferbedingungen …",
-    },
-]
-TOTAL_LEVELS = len(LEVELS)
-
-
-def create_initial_state() -> dict:
-    return {
-        "level": 1,
-        "answers": {lvl["key"]: "" for lvl in LEVELS},
-        "image_hint": "",
-    }
-
-
-def serialize_state(state: dict) -> str:
-    try:
-        return json.dumps(state)
-    except Exception:
-        return json.dumps(create_initial_state())
-
-
-def deserialize_state(state_str: str | None) -> dict:
-    if not state_str:
-        return create_initial_state()
-    try:
-        return json.loads(state_str)
-    except Exception:
-        return create_initial_state()
+GROK_API_KEY = os.getenv("GROK_API_KEY")              # z.B. Grok / xAI
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")    # z.B. Claude
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")          # z.B. Google Gemini
 
 
 # --------------------------------------------------------------------
-# HTML-Template mit Copy-Buttons
+# HTML-Template mit Copy-Buttons + verstecktem State
 # --------------------------------------------------------------------
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -116,7 +49,7 @@ HTML_PAGE = """
     }}
     textarea {{
       width: 100%;
-      min-height: 160px;
+      min-height: 140px;
       padding: 10px;
       font-size: 15px;
       box-sizing: border-box;
@@ -176,11 +109,6 @@ HTML_PAGE = """
       color: #b91c1c;
       font-weight: bold;
     }}
-    .level-indicator {{
-      font-size: 12px;
-      color: #444;
-      margin-bottom: 6px;
-    }}
   </style>
   <script>
     function copyText(id) {{
@@ -197,31 +125,28 @@ HTML_PAGE = """
 </head>
 <body>
   <h1>Upseller PRO – Test Dashboard</h1>
-  <p>Beantworte die Fragen Level für Level. Upseller ULTRA sammelt alles für die Auswertung.</p>
+  <p>Beantworte die Fragen Level für Level. Upseller ULTRA merkt sich deine Antworten (solange die Seite offen ist).</p>
 
   <form method="post" enctype="multipart/form-data">
-    <div class="level-indicator">
-      Aktuelles Level: {current_level} / {total_levels}
-    </div>
-
-    <label for="text"><b>{question_label}</b></label><br>
-    <textarea id="text" name="text" placeholder="{placeholder}">{prefill}</textarea>
+    <input type="hidden" name="state_b64" value="{state_b64}">
+    <label for="text"><b>{question_html}</b></label><br>
+    <textarea id="text" name="text" placeholder="Deine Antwort hier..."></textarea>
 
     <div style="margin-top:10px;">
       <label for="image">Bild (optional):</label>
       <input id="image" name="image" type="file" accept="image/*">
     </div>
 
-    <input type="hidden" name="state" value="{state_json}">
-
     <div style="margin-top:15px;">
-      <button type="submit" class="primary-btn">Weiter / Auswertung starten</button>
+      <button type="submit" class="primary-btn">Mit KI optimieren</button>
     </div>
 
     <p class="hint">
-      Die KI arbeitet mit deinem internen UPSELLER V5.0 ULTRA Masterprompt (Level-System, Marktanalyse, Verhandlungslogik).
-      Der Prompt liegt sicher auf dem Server und ist nicht im Code sichtbar. Andere KIs (Grok, Claude, Gemini) werden
-      automatisch genutzt, falls API-Keys hinterlegt sind.
+      Die KI arbeitet mit deinem internen UPSELLER V5.0 ULTRA Masterprompt
+      (Level-System, Marktanalyse, Verhandlungslogik).
+      Der Prompt liegt sicher auf dem Server und ist nicht im Code sichtbar.
+      Andere KIs (Grok, Claude, Gemini) werden automatisch genutzt, falls API-Keys
+      hinterlegt sind.
     </p>
   </form>
 
@@ -233,34 +158,88 @@ HTML_PAGE = """
 """
 
 
-def render_page(result: str, state: dict) -> str:
-    level = state.get("level", 1)
-    if level < 1:
-        level = 1
-    if level > TOTAL_LEVELS:
-        level = TOTAL_LEVELS
+# --------------------------------------------------------------------
+# State-Handling für Level-Chat (im versteckten Feld)
+# --------------------------------------------------------------------
+def initial_state() -> dict:
+    return {"level": 1, "answers": {}}
 
-    lvl_def = LEVELS[level - 1]
-    prefill = state.get("answers", {}).get(lvl_def["key"], "")
 
-    state_json = serialize_state({**state, "level": level})
-    state_json_escaped = html_module.escape(state_json, quote=True)
+def encode_state(state: dict) -> str:
+    raw = json.dumps(state)
+    return base64.b64encode(raw.encode("utf-8")).decode("utf-8")
 
-    return HTML_PAGE.format(
-        current_level=level,
-        total_levels=TOTAL_LEVELS,
-        question_label=lvl_def["label"],
-        placeholder=lvl_def["placeholder"],
-        prefill=prefill,
-        state_json=state_json_escaped,
-        result=result,
-    )
+
+def decode_state(state_b64: str) -> dict:
+    if not state_b64:
+        return initial_state()
+    try:
+        raw = base64.b64decode(state_b64.encode("utf-8")).decode("utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return initial_state()
+        return data
+    except Exception:
+        return initial_state()
+
+
+def question_for_level(level: int) -> str:
+    mapping = {
+        1: "LEVEL 1 – Welches Produkt möchtest du verkaufen?",
+        2: "LEVEL 2 – Aus welchem Jahr / Baujahr ist das Produkt?",
+        3: "LEVEL 3 – In welchem Zustand ist es? (z.B. neu, wie neu, gebraucht, stark gebraucht)",
+        4: "LEVEL 4 – Welche Ausstattung / Extras / Besonderheiten hat es?",
+        5: "LEVEL 5 – Welche Mängel oder Schäden gibt es?",
+        6: "LEVEL 6 – Wie viele Stück möchtest du verkaufen?",
+        7: "LEVEL 7 – In welchem Land / welcher Region wird verkauft?",
+        8: "LEVEL 8 – Gibt es sonst noch wichtige technische Daten oder Infos (Maße, U-Wert, Material, Modell etc.)?",
+        9: "Alle Level 1–8 sind ausgefüllt. Wenn du etwas ändern willst, ändere oben deine letzte Antwort oder lade die Seite neu.",
+    }
+    return mapping.get(level, "LEVEL – Frage")
+
+
+def build_human_readable_context(state: dict) -> str:
+    """Baut aus den Level-Antworten einen sauberen Kontexttext für die KIs."""
+    answers = state.get("answers", {})
+    lines = [
+        "Antworten des Nutzers aus dem Level-System:",
+        f"LEVEL 1 – Produkt: {answers.get('1', '')}",
+        f"LEVEL 2 – Jahrgang: {answers.get('2', '')}",
+        f"LEVEL 3 – Zustand: {answers.get('3', '')}",
+        f"LEVEL 4 – Ausstattung / Extras: {answers.get('4', '')}",
+        f"LEVEL 5 – Mängel: {answers.get('5', '')}",
+        f"LEVEL 6 – Stückzahl: {answers.get('6', '')}",
+        f"LEVEL 7 – Marktregion / Land: {answers.get('7', '')}",
+        f"LEVEL 8 – weitere technische Daten: {answers.get('8', '')}",
+    ]
+    return "\n".join(lines)
+
+
+def build_progress_summary(state: dict) -> str:
+    answers = state.get("answers", {})
+    lines = ["Bisherige Antworten (Kurzüberblick):"]
+    for lvl in range(1, min(state.get("level", 1) + 1, 9)):
+        key = str(lvl)
+        if key in answers:
+            lines.append(f"LEVEL {lvl}: {answers[key]}")
+    return "\n".join(lines)
+
+
+def validate_user_input(text: str, max_length: int = 2000) -> tuple[bool, str]:
+    """Einfache Validierung des User-Inputs."""
+    if len(text) > max_length:
+        return False, f"Text zu lang (max. {max_length} Zeichen erlaubt)."
+
+    spam_keywords = ["viagra", "casino", "crypto pump"]
+    if any(kw in text.lower() for kw in spam_keywords):
+        return False, "Ungültiger Inhalt erkannt."
+
+    return True, ""
 
 
 # --------------------------------------------------------------------
 # Hilfsfunktionen: einzelne KIs aufrufen
 # --------------------------------------------------------------------
-
 def call_openai(system_prompt: str, user_text: str) -> str:
     """Standard-Aufruf an OpenAI (wird auch für die Meta-Auswertung genutzt)."""
     if not OPENAI_API_KEY:
@@ -278,7 +257,7 @@ def call_openai(system_prompt: str, user_text: str) -> str:
             {"role": "user", "content": user_text},
         ],
     }
-    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    resp = requests.post(url, headers=headers, json=data, timeout=30)
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
 
@@ -299,7 +278,7 @@ def call_grok(system_prompt: str, user_text: str) -> str:
             {"role": "user", "content": user_text},
         ],
     }
-    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    resp = requests.post(url, headers=headers, json=data, timeout=30)
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
 
@@ -322,7 +301,7 @@ def call_claude(system_prompt: str, user_text: str) -> str:
             {"role": "user", "content": user_text},
         ],
     }
-    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    resp = requests.post(url, headers=headers, json=data, timeout=30)
     resp.raise_for_status()
     msg = resp.json()["content"][0]["text"]
     return msg
@@ -339,7 +318,7 @@ def call_gemini(system_prompt: str, user_text: str) -> str:
     )
     full_prompt = system_prompt + "\n\nNutzer:\n" + user_text
     data = {"contents": [{"parts": [{"text": full_prompt}]}]}
-    resp = requests.post(url, json=data, timeout=60)
+    resp = requests.post(url, json=data, timeout=30)
     resp.raise_for_status()
     return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
@@ -347,7 +326,6 @@ def call_gemini(system_prompt: str, user_text: str) -> str:
 # --------------------------------------------------------------------
 # Ensemble-Logik
 # --------------------------------------------------------------------
-
 def get_available_providers() -> Dict[str, Callable[[str, str], str]]:
     """
     Baut automatisch eine Liste aller verfügbaren KIs,
@@ -355,7 +333,7 @@ def get_available_providers() -> Dict[str, Callable[[str, str], str]]:
     """
     providers: Dict[str, Callable[[str, str], str]] = {}
 
-    # OpenAI wird IMMER als Provider genutzt – ist auch unsere Meta-KI
+    # OpenAI wird IMMER genutzt – ist auch unsere Meta-KI
     providers["openai"] = call_openai
 
     if GROK_API_KEY:
@@ -369,9 +347,7 @@ def get_available_providers() -> Dict[str, Callable[[str, str], str]]:
 
 
 def collect_opinions(user_context: str) -> Dict[str, str]:
-    """
-    Ruft alle verfügbaren Provider auf und sammelt deren Roh-Antworten.
-    """
+    """Ruft alle verfügbaren Provider auf und sammelt deren Roh-Antworten (sequenziell)."""
     providers = get_available_providers()
     opinions: Dict[str, str] = {}
 
@@ -385,24 +361,71 @@ def collect_opinions(user_context: str) -> Dict[str, str]:
     return opinions
 
 
+def safe_parse_meta(meta_answer: str) -> tuple[str, str]:
+    """Robustes Parsing der Meta-Antwort mit Fallback."""
+    level9 = ""
+    kicheck = ""
+    try:
+        if "---LEVEL9_START---" in meta_answer and "---LEVEL9_END---" in meta_answer:
+            part = meta_answer.split("---LEVEL9_START---", 1)[1]
+            level9, rest = part.split("---LEVEL9_END---", 1)
+
+            if "---KICHECK_START---" in rest and "---KICHECK_END---" in rest:
+                part = rest.split("---KICHECK_START---", 1)[1]
+                kicheck = part.split("---KICHECK_END---", 1)[0]
+        else:
+            # Fallback: einfache Zweiteilung
+            parts = meta_answer.split("\n\n---\n\n", 1)
+            level9 = parts[0] if parts else meta_answer
+            kicheck = parts[1] if len(parts) > 1 else "Konnte nicht extrahiert werden"
+    except Exception as e:
+        level9 = meta_answer
+        kicheck = f"Parsing-Fehler: {e}"
+
+    return level9.strip(), kicheck.strip()
+
+
 def build_meta_analysis(user_context: str, opinions: Dict[str, str]) -> Dict[str, str]:
     """
     Nutzt OpenAI (ChatGPT) als Meta-KI, um alle Einzel-Gutachten zu einer
     gemeinsamen Level-9-Auswertung + KI-Vergleichs-Prompt zu verschmelzen.
+
+    WICHTIG: Die KI soll aktiv prüfen, ob für eine saubere Preisfindung
+    Schlüsseldaten fehlen, und dann konkrete Rückfragen formulieren.
     """
     providers_used = ", ".join(opinions.keys())
 
     meta_system = (
         "Du bist UPSELLER ULTRA – Meta-Analyst.\n"
         "Du bekommst mehrere KI-Gutachten zum gleichen Verkaufsobjekt "
-        "(z.B. OpenAI, Grok, Claude, Gemini). "
-        "Du sollst daraus EINE konsistente Auswertung im UPSELLER-V5.0-Format bauen:\n"
-        "- Level 9: Marktanalyse, Preisbereich, Wertfaktoren, Plattformen, Timing,\n"
-        "  psychologische Preisstrategie, Premium-Anzeigentext, Profi-Zusammenfassung.\n"
-        "- Level 10: KI-Vergleichs-Prompt zum Kopieren, exakt im Block-Format.\n\n"
-        "WICHTIG: Antworte strukturiert mit folgenden Markern:\n"
+        "(z.B. OpenAI, Grok, Claude, Gemini) und die Level-1–8-Antworten des Nutzers.\n\n"
+        "DEINE HAUPTAUFGABE:\n"
+        "1. Baue daraus EINE konsistente Auswertung im UPSELLER V5.0 ULTRA Format:\n"
+        "   - Level 9: Marktanalyse, Preisbereich, Wertfaktoren, Plattformen, Timing,\n"
+        "     psychologische Preisstrategie, Premium-Anzeigentext, Profi-Zusammenfassung.\n"
+        "   - Level 10: KI-Vergleichs-Prompt zum Kopieren, exakt im Block-Format.\n\n"
+        "2. Prüfe AKTIV, ob für eine genaue Preisfindung wichtige Infos fehlen oder zu vage sind.\n"
+        "   Typische Schlüsseldaten sind z.B.:\n"
+        "   - exakte Produktbezeichnung / Typ / Marke\n"
+        "   - Baujahr / Alter\n"
+        "   - Zustand (inkl. Mängel)\n"
+        "   - Maße / Größe / Stückzahl\n"
+        "   - technische Daten (z.B. U-Wert, Verglasung, Material, Modell)\n"
+        "   - Marktregion (Land / Region)\n"
+        "   - besondere Ausstattung / Extras\n\n"
+        "3. Wenn solche Schlüsseldaten fehlen oder unklar sind, MUSST du im Level-9-Block\n"
+        "   einen eigenen Abschnitt einbauen:\n"
+        "   \"Fehlende oder unklare Schlüsseldaten – bitte beantworten:\" \n"
+        "   - Formuliere dort 3–8 KONKRETE Rückfragen in Stichpunkten.\n"
+        "   - Mach klar, dass die aktuelle Preisspanne nur eine vorläufige\n"
+        "     Einschätzung ist, bis diese Fragen geklärt sind.\n\n"
+        "4. Falls Daten fehlen, trotzdem eine Preis-Spanne nennen – aber mit\n"
+        "   Sicherheits-Puffer und einem klaren Unsicherheitshinweis.\n\n"
+        "AUSGABESTRUKTUR (sehr wichtig):\n"
+        "Nutze exakt diese Marker, damit die Anwendung deine Blöcke trennen kann:\n"
         "---LEVEL9_START---\n"
-        "(komplette Level-9-Auswertung als Textblock)\n"
+        "(komplette Level-9-Auswertung als Textblock, inkl. Abschnitt für fehlende Daten,\n"
+        " falls etwas Wichtiges fehlt.)\n"
         "---LEVEL9_END---\n"
         "---KICHECK_START---\n"
         "(kompletter KI-Vergleichs-Prompt-Block im vorgegebenen Format)\n"
@@ -414,7 +437,7 @@ def build_meta_analysis(user_context: str, opinions: Dict[str, str]) -> Dict[str
         opinions_text += f"\n\n### Gutachten {name.upper()}:\n{content}\n"
 
     meta_user = textwrap.dedent(f"""
-    NUTZER-KONTEXT (Antworten aus Level 1–8):
+    NUTZER-KONTEXT (Antworten aus Level 1–8 – leere oder sehr kurze Antworten bedeuten: Info fehlt oder ist unklar):
 
     {user_context}
 
@@ -428,144 +451,147 @@ def build_meta_analysis(user_context: str, opinions: Dict[str, str]) -> Dict[str
     1. Ziehe aus den Gutachten eine einzige, saubere Level-9-Auswertung gemäß
        UPSELLER V5.0 ULTRA (Preisbereich, Wertfaktoren, Plattformen, Timing,
        psychologische Preisstrategie, Premium-Anzeigentext, Profi-Zusammenfassung).
-    2. Erstelle am Ende zusätzlich den Level-10-KI-Vergleichs-Prompt exakt im Block-Format
-       (wie in deinem Masterprompt beschrieben).
-    3. Nutze strikt die Marker ---LEVEL9_START--- / ---LEVEL9_END--- und
-       ---KICHECK_START--- / ---KICHECK_END---, damit ich die Blöcke sauber trennen kann.
+    2. Prüfe, welche Schlüsseldaten für eine genaue Preisfindung fehlen oder unklar sind
+       (z.B. fehlende Maße, Marke, Material, Region, Zustand, Mängel, technische Daten).
+       Falls etwas Wichtiges fehlt, erstelle im Level-9-Block einen klaren Abschnitt:
+
+       "Fehlende oder unklare Schlüsseldaten – bitte beantworten:"
+       - Frage 1 …
+       - Frage 2 …
+       - usw. (3–8 Fragen, kurz & konkret)
+
+       und kennzeichne die Preisempfehlung deutlich als vorläufige Spanne.
+    3. Erstelle am Ende zusätzlich den Level-10-KI-Vergleichs-Prompt exakt im Block-Format
+       (wie im UPSELLER-Prompt beschrieben).
+    4. Nutze strikt die Marker ---LEVEL9_START--- / ---LEVEL9_END--- und
+       ---KICHECK_START--- / ---KICHECK_END---, damit die Anwendung die Blöcke trennen kann.
     """)
 
     meta_answer = call_openai(meta_system, meta_user)
 
-    # Parsing der Blöcke
-    try:
-        part_after_l9_start = meta_answer.split("---LEVEL9_START---", 1)[1]
-        level9_text, rest = part_after_l9_start.split("---LEVEL9_END---", 1)
-        part_after_kicheck_start = rest.split("---KICHECK_START---", 1)[1]
-        kicheck_text = part_after_kicheck_start.split("---KICHECK_END---", 1)[0]
-    except Exception:
-        level9_text = meta_answer
-        kicheck_text = "KI-Vergleichs-Prompt konnte nicht automatisch extrahiert werden."
+    level9_text, kicheck_text = safe_parse_meta(meta_answer)
 
     return {
         "providers_used": providers_used,
-        "level9": level9_text.strip(),
-        "kicheck": kicheck_text.strip(),
+        "level9": level9_text,
+        "kicheck": kicheck_text,
     }
 
 
 # --------------------------------------------------------------------
 # FastAPI Routen
 # --------------------------------------------------------------------
-
 @app.get("/", response_class=HTMLResponse)
 async def form_get():
-    state = create_initial_state()
-    result_html = "Gib zuerst die Infos für Level 1 ein und klicke dann auf „Weiter“."
-    return render_page(result_html, state)
+    state = initial_state()
+    question_html = question_for_level(state["level"])
+    result_html = (
+        "Starte mit LEVEL 1: Beschreibe dein Produkt kurz oben im Feld und "
+        "klicke auf „Mit KI optimieren“. Danach kommen automatisch die nächsten Level."
+    )
+    return HTML_PAGE.format(
+        result=result_html,
+        question_html=question_html,
+        state_b64=encode_state(state),
+    )
 
 
 @app.post("/", response_class=HTMLResponse)
 async def form_post(
-    text: str = Form(...),
-    state: str = Form(None),
+    text: str = Form(""),
+    state_b64: str = Form(""),
     image: UploadFile | None = File(None),
 ):
-    # bisherige Session laden
-    session = deserialize_state(state)
-    level = session.get("level", 1)
-
-    # aktuelle Antwort speichern
+    # State dekodieren
+    state = decode_state(state_b64)
+    level = int(state.get("level", 1))
     answer = (text or "").strip()
-    if not answer:
-        result_html = "<span class='error'>Bitte gib zuerst eine Antwort ein.</span>"
-        return render_page(result_html, session)
 
-    if level < 1:
-        level = 1
-    if level > TOTAL_LEVELS:
-        level = TOTAL_LEVELS
+    # Solange wir noch in Level 1–8 sind: Antwort ist Pflicht + validieren
+    if level <= 8:
+        if not answer:
+            result_html = "<span class='error'>Bitte beantworte zuerst die aktuelle Level-Frage.</span>"
+            question_html = question_for_level(level)
+            return HTML_PAGE.format(
+                result=result_html,
+                question_html=question_html,
+                state_b64=encode_state(state),
+            )
+        ok, msg = validate_user_input(answer)
+        if not ok:
+            result_html = f"<span class='error'>{msg}</span>"
+            question_html = question_for_level(level)
+            return HTML_PAGE.format(
+                result=result_html,
+                question_html=question_html,
+                state_b64=encode_state(state),
+            )
 
-    current_level_def = LEVELS[level - 1]
-    key = current_level_def["key"]
-    session.setdefault("answers", {})[key] = answer
+    # Antwort speichern
+    if level <= 8:
+        state["answers"][str(level)] = answer
 
-    # Bild nur als Hinweis speichern (keine Vision-API, aber später erweiterbar)
-    if image and image.filename:
-        session["image_hint"] = f"Nutzer hat ein Bild hochgeladen (Dateiname: {image.filename})."
-
-    # Wenn wir Level 1–7 bearbeiten → nur zum nächsten Level springen
-    if level < TOTAL_LEVELS:
-        session["level"] = level + 1
-
-        # kurze Zusammenfassung der bisherigen Antworten
-        summary_lines = ["Bisherige Antworten:"]
-        for idx, lvl in enumerate(LEVELS[:level], start=1):
-            val = session["answers"].get(lvl["key"], "").strip()
-            if val:
-                summary_lines.append(f"Level {idx}: {val}")
-        summary_text = "\n".join(summary_lines)
-
-        result_html = (
-            f"Antwort für Level {level} gespeichert.\n"
-            f"Als nächstes kommt: {LEVELS[level]['label']}\n\n"
-            f"{summary_text}"
+    # Wenn noch nicht alle Level gesammelt: einfach zum nächsten Level springen
+    if level < 8:
+        state["level"] = level + 1
+        question_html = question_for_level(state["level"])
+        summary = build_progress_summary(state)
+        result_html = summary + "\n\nWeiter mit dem nächsten Level oben."
+        return HTML_PAGE.format(
+            result=result_html,
+            question_html=question_html,
+            state_b64=encode_state(state),
         )
-        return render_page(result_html, session)
 
-    # ----------------------------------------------------------------
-    # Wir haben Level 8 gerade beantwortet -> Level 9 Auswertung
-    # ----------------------------------------------------------------
-    session["level"] = TOTAL_LEVELS  # bleibt 8, Fragen sind fertig
+    # Ab hier: Level 8 wurde gerade beantwortet -> Level 9 Analyse fahren
+    state["level"] = 9
+    user_context = build_human_readable_context(state)
 
-    # Nutzer-Kontext aus allen Level-Antworten bauen
-    answers = session.get("answers", {})
-    ctx_lines = []
-    for idx, lvl in enumerate(LEVELS, start=1):
-        val = answers.get(lvl["key"], "").strip()
-        if val:
-            ctx_lines.append(f"Level {idx} ({lvl['label']}): {val}")
-    if session.get("image_hint"):
-        ctx_lines.append(session["image_hint"])
-
-    user_context = "\n".join(ctx_lines)
+    # Bild aktuell nur als Hinweis im Kontext – Vision können wir später einbauen
+    if image and image.filename:
+        user_context += f"\n\nHinweis: Es wurde ein Bild hochgeladen (Dateiname: {image.filename})."
 
     try:
-        # 1. Einzel-Gutachten einsammeln (OpenAI + optionale andere KIs)
         opinions = collect_opinions(user_context)
-
-        # 2. Meta-Analyse mit OpenAI (ChatGPT) bauen
         meta = build_meta_analysis(user_context, opinions)
 
         providers_used = meta["providers_used"] or "nur OpenAI"
         level9_block = meta["level9"]
         kicheck_block = meta["kicheck"]
 
-        # 3. Ergebnis-HTML mit Copy-Buttons
         result_html = f"""
-        <div>
-          <div class="provider-list">
-            Auswertung erstellt mit: {providers_used}
-          </div>
+Bisherige Antworten (Kurzüberblick):
+{build_progress_summary(state)}
 
-          <div class="section-title">
-            Level 9 – Marktanalyse & Preisauswertung
-            <button class="copy-btn" type="button" onclick="copyText('level9_block')">Level-9 kopieren</button>
-          </div>
-          <pre id="level9_block">{level9_block}</pre>
+---
 
-          <div class="section-title">
-            Level 10 – KI-Vergleichs-Prompt (für andere KIs)
-            <button class="copy-btn" type="button" onclick="copyText('kicheck_block')">KI-Prompt kopieren</button>
-          </div>
-          <p class="hint">
-            Diesen Block kannst du in andere KIs (z. B. Grok, Claude, Gemini, ChatGPT) einfügen,
-            damit sie dein Angebot unabhängig prüfen und ergänzen.
-          </p>
-          <pre id="kicheck_block">{kicheck_block}</pre>
-        </div>
+<div class="provider-list">
+  Auswertung erstellt mit: {providers_used}
+</div>
+
+<div class="section-title">
+  Level 9 – Marktanalyse & Preisauswertung
+  <button class="copy-btn" type="button" onclick="copyText('level9_block')">Level-9 kopieren</button>
+</div>
+<pre id="level9_block">{level9_block}</pre>
+
+<div class="section-title">
+  Level 10 – KI-Vergleichs-Prompt (für andere KIs)
+  <button class="copy-btn" type="button" onclick="copyText('kicheck_block')">KI-Prompt kopieren</button>
+</div>
+<p class="hint">
+  Diesen Block kannst du in andere KIs (z. B. Grok, Claude, Gemini, ChatGPT) einfügen,
+  damit sie dein Angebot unabhängig prüfen und ergänzen.
+</p>
+<pre id="kicheck_block">{kicheck_block}</pre>
         """
 
     except Exception as e:
         result_html = f"<span class='error'>Fehler bei der KI-Anfrage: {e}</span>"
 
-    return render_page(result_html, session)
+    question_html = question_for_level(state["level"])
+    return HTML_PAGE.format(
+        result=result_html,
+        question_html=question_html,
+        state_b64=encode_state(state),
+    )
