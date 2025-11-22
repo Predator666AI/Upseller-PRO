@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.responses import HTMLResponse
 import os
 import json
+import base64
 from openai import OpenAI
 
 app = FastAPI()
@@ -9,7 +10,7 @@ app = FastAPI()
 # OpenAI-Client (API-Key kommt aus Railway-Variable OPENAI_API_KEY)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# HTML-Template mit verstecktem Verlauf
+# HTML-Template mit verstecktem Verlauf + Bild-Upload
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -68,8 +69,10 @@ HTML_PAGE = """
     Füge deine Antworten nacheinander ein. Upseller ULTRA merkt sich den Verlauf (solange die Seite offen ist).
   </p>
 
-  <form method="post">
+  <form method="post" enctype="multipart/form-data">
     <textarea name="text" rows="4" placeholder="Antworte hier z. B.: &quot;Massivholzfenster 149 x 149 cm&quot;."></textarea>
+    <br/><br/>
+    Bild (optional): <input type="file" name="image" accept="image/*" />
     <!-- Versteckter Gesprächsverlauf (wird bei jedem Request mitgeschickt) -->
     <input type="hidden" name="history" value="{history}" />
     <br/>
@@ -77,9 +80,8 @@ HTML_PAGE = """
   </form>
 
   <div class="hint">
-    Dein interner UPSELLER V5.0 ULTRA Prompt (Level-System, Marktanalyse, Verhandlungslogik, KI-Check) liegt sicher
-    auf dem Server und ist nicht im Code sichtbar. Für Folgefragen oder die nächsten Level (Jahrgang, Zustand,
-    Ausstattung, Verhandlung usw.) einfach wieder etwas in das Feld schreiben und auf den Button klicken.
+    Du kannst Text + optional ein Bild senden. Bei Bild analysiert Upseller ULTRA automatisch Zustand, Material,
+    Kratzer, Besonderheiten usw., zusätzlich zu deinem Level-System (V5.0 ULTRA).
   </div>
 
   {result}
@@ -138,18 +140,18 @@ async def form_get():
 
 @app.post("/", response_class=HTMLResponse)
 async def form_post(
-    text: str = Form(...),
+    text: str = Form(""),
     history: str = Form("[]"),
+    image: UploadFile | None = File(None),
 ):
     """
-    - Nimmt den aktuellen Text aus der Textarea (deine Antwort / Frage)
-    - Liest den bisherigen Verlauf (history) ein
+    - Nimmt Text + optional Bild entgegen
+    - Liest den bisherigen Verlauf (history)
     - Ruft OpenAI mit:
         • System: dein originaler UPSELLER-Prompt (aus Environment)
         • System 2: Zusatz-Anweisung für KI-CHECK-Block am Ende
         • kompletter Conversation-Verlauf
-    - Hängt die neue Assistant-Antwort wieder an die History an
-    - Gibt alles zurück (History bleibt unsichtbar im Hidden-Feld)
+        • neue User-Nachricht (Text + ggf. Bild)
     """
 
     # 1. Masterprompt sicher aus Environment lesen (dein Original)
@@ -166,8 +168,35 @@ async def form_post(
     except Exception:
         conversation = []
 
-    # 3. Neue User-Nachricht an den Verlauf anhängen
-    conversation.append({"role": "user", "content": text})
+    # 3. Neue User-Nachricht bauen: Text + optional Bild
+    user_content: list = []
+
+    if text.strip():
+        user_content.append({
+            "type": "input_text",
+            "text": text.strip()
+        })
+
+    if image is not None:
+        try:
+            data = await image.read()
+            if data:
+                mime = image.content_type or "image/jpeg"
+                b64 = base64.b64encode(data).decode("utf-8")
+                data_url = f"data:{mime};base64,{b64}"
+                user_content.append({
+                    "type": "input_image",
+                    "image_url": {"url": data_url}
+                })
+        except Exception:
+            # Falls Bild nicht gelesen werden kann, ignorieren wir es einfach
+            pass
+
+    if user_content:
+        conversation.append({"role": "user", "content": user_content})
+    else:
+        # Falls wirklich nichts gesendet wurde, sende eine neutrale User-Nachricht
+        conversation.append({"role": "user", "content": "Weiter im Level-System ohne neue Details."})
 
     # 4. Zusatz-System-Instruktion: KI-CHECK-BLOCK nur am Ende nach Level 9
     extra_system_instruction = (
@@ -176,7 +205,7 @@ async def form_post(
         "(also Level 9) geliefert hast, füge GANZ AM ENDE deiner Antwort einen zusätzlichen Block an, der als "
         "KI-CHECK-BLOCK für andere KIs (Claude, Grok, GPT, Llama etc.) dient. Nutze dafür dein vorgegebenes Schema "
         "für 'KI-Check (für andere KIs)' und 'PREISEMPFEHLUNG (Kurzform)' und 'VERGLEICHSBASIS'. "
-        "Fülle die Felder so gut wie möglich aus, basierend auf den bisherigen Informationen. "
+        "Fülle die Felder so gut wie möglich aus, basierend auf den bisherigen Informationen (inkl. Bildanalyse, falls vorhanden). "
         "Formatiere diesen Block so, dass der Nutzer ihn mit einem Klick kopieren kann, z. B. mit einer klaren Überschrift:\n"
         "\"--- KI-CHECK-BLOCK (für andere KIs – Copy & Paste) ---\".\n"
         "Schreibe darunter in 1–2 Sätzen kurz, dass dieser Block dazu dient, deine Einschätzung in anderen KIs zu prüfen. "
@@ -193,7 +222,7 @@ async def form_post(
     # 6. OpenAI anfragen
     try:
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",  # günstig & gut – bei Bedarf anpassbar
+            model="gpt-4.1-mini",  # unterstützt Text + Bild
             messages=messages,
             temperature=0.7,
         )
