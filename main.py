@@ -1,255 +1,113 @@
 from fastapi import FastAPI, Form, File, UploadFile
 from fastapi.responses import HTMLResponse
-import os
-import json
+import requests
 import base64
-from openai import OpenAI
+import os
 
 app = FastAPI()
 
-# OpenAI-Client (API-Key kommt aus Railway-Variable OPENAI_API_KEY)
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# HTML-Template mit verstecktem Verlauf + Bild-Upload
 HTML_PAGE = """
-<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Upseller PRO</title>
-  <style>
-    body {{
-      font-family: Arial, sans-serif;
-      max-width: 900px;
-      margin: 40px auto;
-      padding: 0 15px;
-    }}
-    h1 {{
-      font-size: 26px;
-      margin-bottom: 5px;
-    }}
-    p.subtitle {{
-      margin-top: 0;
-      color: #555;
-      font-size: 14px;
-    }}
-    textarea {{
-      width: 100%;
-      padding: 10px;
-      font-size: 15px;
-      box-sizing: border-box;
-    }}
-    button {{
-      margin-top: 10px;
-      padding: 10px 20px;
-      font-size: 15px;
-      cursor: pointer;
-    }}
-    .hint {{
-      margin-top: 10px;
-      font-size: 12px;
-      color: #666;
-    }}
-    .box {{
-      margin-top: 25px;
-      padding: 15px;
-      background: #f2f2f2;
-      border-radius: 8px;
-      white-space: pre-wrap;
-    }}
-    .error {{
-      color: #b00020;
-      font-weight: bold;
-    }}
-  </style>
+<title>Upseller PRO – Test Dashboard</title>
+<style>
+ body { font-family: Arial; max-width: 780px; margin: 40px auto; }
+ textarea { width:100%; padding: 10px; font-size: 15px; }
+ button { padding: 10px 20px; font-size: 16px; }
+ .box { margin-top: 20px; padding: 15px; background: #f2f2f2; border-radius: 8px; }
+</style>
 </head>
 <body>
-  <h1>Upseller PRO – Test Dashboard</h1>
-  <p class="subtitle">
-    Füge deine Antworten nacheinander ein. Upseller ULTRA merkt sich den Verlauf (solange die Seite offen ist).
-  </p>
 
-  <form method="post" enctype="multipart/form-data">
-    <textarea name="text" rows="4" placeholder="Antworte hier z. B.: &quot;Massivholzfenster 149 x 149 cm&quot;."></textarea>
-    <br/><br/>
-    Bild (optional): <input type="file" name="image" accept="image/*" />
-    <!-- Versteckter Gesprächsverlauf (wird bei jedem Request mitgeschickt) -->
-    <input type="hidden" name="history" value="{history}" />
-    <br/>
-    <button type="submit">Mit KI optimieren</button>
-  </form>
+<h1>Upseller PRO – Test Dashboard</h1>
 
-  <div class="hint">
-    Du kannst Text + optional ein Bild senden. Bei Bild analysiert Upseller ULTRA automatisch Zustand, Material,
-    Kratzer, Besonderheiten usw., zusätzlich zu deinem Level-System (V5.0 ULTRA).
-  </div>
+<p>Füge deine Antworten nacheinander ein. Upseller ULTRA merkt sich den Verlauf.</p>
 
-  {result}
+<form method="post" enctype="multipart/form-data">
+<textarea name="text" rows="5" placeholder='Antwort hier z. B.: "Massivholzfenster 149 x 149 cm".'></textarea><br><br>
+
+Bild (optional): <input type="file" name="image"><br><br>
+
+<button type="submit">Mit KI optimieren</button>
+</form>
+
+<p style="font-size:12px; color:#555;">
+Du kannst Text + optional ein Bild senden. Upseller V5.0 ULTRA analysiert automatisch Zustand, Material, Verglasung usw.
+</p>
+
+{result}
+
 </body>
 </html>
 """
 
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+UPSELLER_PROMPT = os.getenv("UPSELLER_PROMPT", "Upseller Prompt missing!")
 
-def _escape_html_attr(value: str) -> str:
-    """
-    Kleiner Helper, damit das JSON im hidden-Input nicht das HTML kaputt macht.
-    """
-    return (
-        value.replace("&", "&amp;")
-        .replace('"', "&quot;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+API_URL = "https://api.openai.com/v1/responses"
+
+
+def encode_image(file):
+    return base64.b64encode(file).decode("utf-8")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def form_get():
-    """
-    ERSTER AUFRUF:
-    - Wir starten direkt mit LEVEL 1 als Assistant-Nachricht.
-    - Die Frage steht sofort unten im grauen Kasten.
-    - Der Verlauf (mit dieser ersten Assistant-Nachricht) liegt schon im Hidden-Feld.
-    """
-    conversation = [
-        {
-            "role": "assistant",
-            "content": (
-                "⭐ LEVEL 1 – PRODUKTNAME\n\n"
-                "Welches Produkt möchtest du verkaufen? Schreib bitte kurz den Produktnamen "
-                "(z. B. „Massivholzfenster 149 x 149 cm“, „iPhone 14 Pro 256 GB“, "
-                "„Bosch Akkuschrauber-Set“, „Dienstleistung: Gartenpflege in Brandenburg“)."
-            ),
-        }
-    ]
-
-    history_json = json.dumps(conversation, ensure_ascii=False)
-    first_answer = conversation[0]["content"].replace("\n", "<br>")
-
-    result_html = f"""
-    <div class="box">
-      <b>Upseller-ULTRA Antwort:</b><br><br>
-      {first_answer}
-    </div>
-    """
-
-    return HTML_PAGE.format(
-        history=_escape_html_attr(history_json),
-        result=result_html,
-    )
+    # Stellt sicher, dass Level 1 automatisch startet
+    first_msg = "<div class='box'><b>LEVEL 1 – Welches Produkt möchtest du verkaufen?</b></div>"
+    return HTML_PAGE.format(result=first_msg)
 
 
 @app.post("/", response_class=HTMLResponse)
-async def form_post(
-    text: str = Form(""),
-    history: str = Form("[]"),
-    image: UploadFile | None = File(None),
-):
-    """
-    - Nimmt Text + optional Bild entgegen
-    - Liest den bisherigen Verlauf (history)
-    - Ruft OpenAI mit:
-        • System: dein originaler UPSELLER-Prompt (aus Environment)
-        • System 2: Zusatz-Anweisung für KI-CHECK-Block am Ende
-        • kompletter Conversation-Verlauf
-        • neue User-Nachricht (Text + ggf. Bild)
-    """
+async def form_post(text: str = Form(""), image: UploadFile = File(None)):
 
-    # 1. Masterprompt sicher aus Environment lesen (dein Original)
-    masterprompt = os.getenv(
-        "UPSELLER_PROMPT",
-        "Du bist ein Verkaufsprofi. Wenn der UPSELLER_PROMPT nicht gesetzt ist, arbeite einfach so gut du kannst."
-    )
+    content_block = []
 
-    # 2. Verlauf aus hidden-field parsen
-    try:
-        conversation = json.loads(history)
-        if not isinstance(conversation, list):
-            conversation = []
-    except Exception:
-        conversation = []
+    # ➤ TEXT EINBAUEN
+    if text.strip() != "":
+        content_block.append({"type": "text", "text": text})
 
-    # 3. Neue User-Nachricht bauen: Text + optional Bild
-    user_content: list = []
-
-    if text.strip():
-        user_content.append({
-            "type": "input_text",
-            "text": text.strip()
+    # ➤ BILD EINBAUEN
+    if image:
+        img_bytes = await image.read()
+        img_b64 = encode_image(img_bytes)
+        content_block.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{img_b64}"
+            }
         })
 
-    if image is not None:
-        try:
-            data = await image.read()
-            if data:
-                mime = image.content_type or "image/jpeg"
-                b64 = base64.b64encode(data).decode("utf-8")
-                data_url = f"data:{mime};base64,{b64}"
-                user_content.append({
-                    "type": "input_image",
-                    "image_url": {"url": data_url}
-                })
-        except Exception:
-            # Falls Bild nicht gelesen werden kann, ignorieren wir es einfach
-            pass
+    # ➤ API REQUEST
+    payload = {
+        "model": "gpt-4o-mini",
+        "input": [
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": UPSELLER_PROMPT}
+                ]
+            },
+            {
+                "role": "user",
+                "content": content_block
+            }
+        ]
+    }
 
-    if user_content:
-        conversation.append({"role": "user", "content": user_content})
-    else:
-        # Falls wirklich nichts gesendet wurde, sende eine neutrale User-Nachricht
-        conversation.append({"role": "user", "content": "Weiter im Level-System ohne neue Details."})
+    headers = {
+        "Authorization": f"Bearer {OPENAI_KEY}",
+        "Content-Type": "application/json"
+    }
 
-    # 4. Zusatz-System-Instruktion: KI-CHECK-BLOCK nur am Ende nach Level 9
-    extra_system_instruction = (
-        "WICHTIG: Du arbeitest mit dem originalen UPSELLER V5.0 ULTRA Prompt (Level-System). "
-        "Wenn du eine vollständige Marktanalyse inkl. Preisspanne, Plattformen, Psychologie und Premium-Anzeigentext "
-        "(also Level 9) geliefert hast, füge GANZ AM ENDE deiner Antwort einen zusätzlichen Block an, der als "
-        "KI-CHECK-BLOCK für andere KIs (Claude, Grok, GPT, Llama etc.) dient. Nutze dafür dein vorgegebenes Schema "
-        "für 'KI-Check (für andere KIs)' und 'PREISEMPFEHLUNG (Kurzform)' und 'VERGLEICHSBASIS'. "
-        "Fülle die Felder so gut wie möglich aus, basierend auf den bisherigen Informationen (inkl. Bildanalyse, falls vorhanden). "
-        "Formatiere diesen Block so, dass der Nutzer ihn mit einem Klick kopieren kann, z. B. mit einer klaren Überschrift:\n"
-        "\"--- KI-CHECK-BLOCK (für andere KIs – Copy & Paste) ---\".\n"
-        "Schreibe darunter in 1–2 Sätzen kurz, dass dieser Block dazu dient, deine Einschätzung in anderen KIs zu prüfen. "
-        "Füge diesen Block NUR ANS ENDE deiner Antwort an. Nach diesem Block kommt nichts mehr."
-    )
-
-    # 5. Messages für OpenAI bauen
-    messages = [
-        {"role": "system", "content": masterprompt},
-        {"role": "system", "content": extra_system_instruction},
-        *conversation,
-    ]
-
-    # 6. OpenAI anfragen
     try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",  # unterstützt Text + Bild
-            messages=messages,
-            temperature=0.7,
-        )
+        r = requests.post(API_URL, json=payload, headers=headers)
+        r.raise_for_status()
+        data = r.json()
 
-        answer = response.choices[0].message.content.strip()
-        # Antwort in den Verlauf eintragen
-        conversation.append({"role": "assistant", "content": answer})
-
-        # HTML-Ausgabe: komplette Antwort (inkl. KI-CHECK-BLOCK) anzeigen
-        result_html = f"""
-        <div class="box">
-          <b>Upseller-ULTRA Antwort:</b><br><br>
-          {answer.replace('\n', '<br>')}
-        </div>
-        """
-
+        answer = data["output_text"]
     except Exception as e:
-        # Fehler schön ausgeben
-        result_html = f"""
-        <div class="box error">
-          Fehler bei der KI-Anfrage: {str(e)}
-        </div>
-        """
+        answer = f"<b>Fehler bei der KI-Anfrage:</b><br>{str(e)}"
 
-    # 7. Verlauf wieder als JSON ins versteckte Feld zurückschreiben
-    history_json = json.dumps(conversation, ensure_ascii=False)
-    return HTML_PAGE.format(
-        history=_escape_html_attr(history_json),
-        result=result_html
-    )
+    result_box = f"<div class='box'>{answer}</div>"
+    return HTML_PAGE.format(result=result_box)
